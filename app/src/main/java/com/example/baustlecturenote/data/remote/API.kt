@@ -39,7 +39,6 @@ interface API {
 
     @DELETE("notes/{id}")
     suspend fun deletePdf(
-        @Header("Authorization") token: String,
         @Path("id") noteId: String
     ): Map<String, String>
 

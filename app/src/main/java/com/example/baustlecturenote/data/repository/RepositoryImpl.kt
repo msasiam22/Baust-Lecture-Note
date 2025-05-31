@@ -136,11 +136,11 @@ class RepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun deletePdf(token: String, noteId: String): Flow<Resource<Boolean>> {
+    override suspend fun deletePdf(noteId: String): Flow<Resource<Boolean>> {
         return flow {
             emit(Resource.Loading(true))
             val response = try {
-                api.deletePdf("Bearer $token", noteId)
+                api.deletePdf(noteId)
             }catch (e: IOException){
                 e.printStackTrace()
                 emit(Resource.Error(e.message.toString()))

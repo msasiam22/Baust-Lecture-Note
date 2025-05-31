@@ -1,5 +1,6 @@
 package com.example.baustlecturenote.presentation
 
+import android.util.Log
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -44,6 +45,24 @@ class HomeViewModel @Inject constructor(
                         note.category.contains(query, ignoreCase = true)
             }
             _notes.value = Resource.Success(filtered)
+        }
+    }
+
+    fun deleteNote(noteId: String) {
+        viewModelScope.launch {
+            repository.deletePdf(noteId).collect { result ->
+                when(result) {
+                    is Resource.Success -> {
+                        fetchNotes()
+                    }
+                    is Resource.Error -> {
+                        Log.e("TAG", result.message ?: "Error deleting note")
+                    }
+                    is Resource.Loading -> {
+                        _notes.value = Resource.Loading(true)
+                    }
+                }
+            }
         }
     }
 }

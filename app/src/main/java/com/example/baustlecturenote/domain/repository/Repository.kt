@@ -17,5 +17,5 @@ interface Repository {
         pdfFile: File
     ): Flow<Resource<NoteDto>>
     suspend fun getPdfs(): Flow<Resource<List<Note>>>
-    suspend fun deletePdf(token: String, noteId: String): Flow<Resource<Boolean>>
+    suspend fun deletePdf(noteId: String): Flow<Resource<Boolean>>
 }

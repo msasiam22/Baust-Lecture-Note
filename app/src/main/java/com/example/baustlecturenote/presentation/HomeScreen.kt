@@ -2,6 +2,9 @@ package com.example.baustlecturenote.presentation
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.os.Environment
+import android.util.Log
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -25,6 +28,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Search
@@ -49,6 +54,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -59,6 +65,15 @@ import androidx.navigation.NavController
 import com.example.baustlecturenote.domain.model.Note
 import com.example.baustlecturenote.utils.Resource
 import com.example.baustlecturenote.utils.Screen
+import com.example.baustlecturenote.utils.downloadPdf
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -75,6 +90,7 @@ fun HomeScreen(
     val role = pref.getString("role", "")
     var searchQuery by remember { mutableStateOf("") }
     val focusManager = LocalFocusManager.current
+    val context = LocalContext.current
 
     LaunchedEffect(searchQuery) {
         viewModel.searchNotes(searchQuery)
@@ -217,7 +233,17 @@ fun HomeScreen(
                                     notesState.data?.get(index)?.let { it1 ->
                                         NoteItem(
                                             note = it1,
-                                            navController = navController
+                                            navController = navController,
+                                            role = role ?: "",
+                                            context = context,
+                                            onDelete = { noteId ->
+                                                viewModel.deleteNote(noteId)
+                                                Toast.makeText(
+                                                    context,
+                                                    "Note deleted successfully",
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
                                         )
                                     }
                                     Spacer(modifier = Modifier.height(8.dp))
@@ -235,7 +261,10 @@ fun HomeScreen(
 fun NoteItem(
     note: Note,
     navController: NavController,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    role: String,
+    context: Context,
+    onDelete: (String) -> Unit = {}
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -244,70 +273,97 @@ fun NoteItem(
             .clickable {
                 navController.navigate(Screen.PdfViewerScreen(note.pdfUrl))
             }
-            .padding(vertical = 8.dp)
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Icon(
-            imageVector = Icons.Default.PictureAsPdf,
-            contentDescription = "PDF Icon",
-            modifier = Modifier.size(32.dp),
-            tint = MaterialTheme.colorScheme.primary
-        )
+        Row{
+            Icon(
+                imageVector = Icons.Default.PictureAsPdf,
+                contentDescription = "PDF Icon",
+                modifier = Modifier.size(32.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
 
-        Spacer(modifier = Modifier.width(16.dp))
+            Spacer(modifier = Modifier.width(16.dp))
 
-        Column(modifier = Modifier.weight(1f)) {
-            Row {
-                Text(
-                    text = note.title,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    maxLines = 1
-                )
-                Spacer(modifier = Modifier.width(16.dp))
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(5.dp))
-                        .background(MaterialTheme.colorScheme.onBackground.copy(.2f))
-                        .padding(1.dp),
-                    contentAlignment = Alignment.Center
-                ){
+            Column() {
+                Row {
                     Text(
-                        text = note.category.lowercase(Locale.ROOT),
-                        fontSize = 9.sp,
-                        color = MaterialTheme.colorScheme.primary,
+                        text = note.title,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground,
                         maxLines = 1
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(5.dp))
+                            .background(MaterialTheme.colorScheme.onBackground.copy(.2f))
+                            .padding(1.dp),
+                        contentAlignment = Alignment.Center
+                    ){
+                        Text(
+                            text = note.category.lowercase(Locale.ROOT),
+                            fontSize = 9.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Text(
+                    text = note.description,
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                    maxLines = 2
+                )
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AccessTime,
+                        contentDescription = "Created at",
+                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = formatDateTime(note.createdAt),
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
                     )
                 }
             }
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Text(
-                text = note.description,
-                fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
-                maxLines = 2
+        }
+        if(role == "admin"){
+            Icon(
+                imageVector = Icons.Default.DeleteForever,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier
+                    .clickable {
+                        onDelete(note.id)
+                    }
             )
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.AccessTime,
-                    contentDescription = "Created at",
-                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = formatDateTime(note.createdAt),
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
-                )
-            }
+        }else{
+            Icon(
+                imageVector = Icons.Default.Download,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .clickable {
+                        val fileName = note.assetId.substringAfterLast('/')
+                         CoroutineScope(Dispatchers.IO).launch {
+                             downloadPdf(context, note.pdfUrl, fileName)
+                         }
+                    }
+            )
         }
     }
 }
